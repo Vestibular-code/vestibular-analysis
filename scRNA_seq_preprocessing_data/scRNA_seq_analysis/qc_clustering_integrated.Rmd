@@ -1,0 +1,204 @@
+# Import Packages 
+library(dplyr)
+library(viridis)
+library(Seurat)
+library(scCustomize)
+library(scDblFinder)
+library(qs)
+library(sctransform)
+library(utils)
+library(stats)
+library(DropletQC)
+
+set.seed(42)
+sample_name = "your_sample_name"
+wd = paste0("/path/to/your/cellbender_data/", sample_name, "/")
+file_name = paste0(sample_name, "_cellbender_output_file_filtered.h5")
+
+# Read Cellbender Output and QC
+cell_bender_mat <- Read_CellBender_h5_Mat(file_name = paste0(wd, "./", file_name))
+cell_bender_seurat <- CreateSeuratObject(counts = cell_bender_mat, names.field = 1, names.delim = "_", min.cells = 3, min.features = 200, project = sample_name)
+cell_bender_seurat <- NormalizeData(cell_bender_seurat, normalization.method = "LogNormalize", scale.factor = 10000)
+data = cell_bender_seurat
+data <- PercentageFeatureSet(data, pattern = "^mt-", col.name = "percent.mt")
+p = VlnPlot(data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01, log = FALSE)
+ggsave(paste0(sv_dir,"1_violin_plot.png"), plot = p, width = 8, height = 6)
+data = subset(data, subset = percent.mt < 10)
+saveRDS(data, paste0(sv_dir, "raw_data.rds"))
+
+# Downstream Analysis 
+seuratData = data
+p = VlnPlot(seuratData, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0.01, log = TRUE)
+p <- FeatureScatter(seuratData, feature1="nCount_RNA", feature2="percent.mt")
+p <- FeatureScatter(seuratData, feature1="nCount_RNA", feature2="nFeature_RNA")
+seuratData <- FindVariableFeatures(seuratData, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+top10 <- head(VariableFeatures(seuratData), 10)
+p <- VariableFeaturePlot(seuratData)
+p <- LabelPoints(plot = p, points = top10, repel = TRUE)
+seuratData <- ScaleData(seuratData, vars.to.regress = c("percent.mt"))
+seuratData <- RunPCA(seuratData)
+p = DimPlot(seuratData)
+print(seuratData[["pca"]], dims = 1:50, nfeatures = 5)
+p = ElbowPlot(seuratData, ndims = 50)
+seuratData <- FindNeighbors(seuratData, dims = 1:50)
+seuratData <- FindClusters(seuratData, resolution = 3, dims = 1:50)
+head(Idents(seuratData), 5)
+seuratData <- RunUMAP(seuratData, umap.method = "uwot", dims = 1:50)
+p = DimPlot(seuratData, reduction = "umap", label = TRUE, group.by = "seurat_clusters")
+p = VlnPlot(seuratData, features = c("nFeature_RNA"), log = TRUE)
+p = VlnPlot(seuratData, features = c("nCount_RNA"), log = TRUE)
+p = VlnPlot(seuratData, features = c("percent.mt"))
+
+# scDblFinder to annotate doublets
+sce = as.SingleCellExperiment(seuratData)
+sce = scDblFinder(sce, cluster = FALSE)
+table(sce$scDblFinder.class)
+seuratData = as.Seurat(sce, project = sample_name)
+seuratData
+head(seuratData@meta.data)
+metadata <- seuratData@meta.data
+saveRDS(seuratData, paste0("/path_to_your_result", "doublet_annnotated.rds"))
+
+# DropletQC to annotate damaged cells
+nf1 <- nuclear_fraction_tags(
+   bam = "/path_to_your/possorted_genome_bam.bam",
+   barcodes = colnames(seuratData),
+   cores = 20,
+   tiles = 100,
+   verbose = TRUE)
+nf1
+saveRDS(nf1, "/path_to_your/nf1.rds")
+#nf1 <- readRDS("/path_to_your/nf1.rds")
+DefaultAssay(seuratData) = "RNA"
+seuratData$nuclear_fraction_droplet_qc = nf1[colnames(seuratData),]
+seuratData$sample = Idents(seuratData)
+seuratData$log10_umi_count = log10(seuratData$nCount_RNA+1)table(seuratData$sample)
+## Identify empty drops
+# Get data frame with the nuclear fraction in the first column and umi counts in the second
+seuratData.nf.umi <- data.frame(nf=seuratData$nuclear_fraction_droplet_qc,
+                                 umi=seuratData$nCount_RNA)# Run identify_empty_drops
+seuratData.ed <- identify_empty_drops(nf_umi=seuratData.nf.umi, nf_rescue = 0, umi_rescue = 0, include_plot = TRUE)
+head(seuratData.ed)table(seuratData.ed$cell_status)
+seuratData$cell_status <- seuratData.ed[3]
+DimPlot(seuratData, reduction = "umap", label = TRUE)
+DimPlot(seuratData, reduction = "umap", label = TRUE, pt.size = 0.5, group.by = "cell_status")# rescue red blood cell
+seuratData.ed$cell_type <- seuratData$sample
+table(seuratData.ed$cell_status, seuratData.ed$cell_type)
+seuratData.ed$cell_status[which(seuratData.ed$cell_type == "red_blood_cell")] = "cell"
+seuratData$cell_status <- seuratData.ed[3]
+DimPlot(seuratData, reduction = "umap", label = TRUE)
+DimPlot(seuratData, reduction = "umap", label = TRUE, pt.size = 0.5, group.by = "cell_status")
+head(seuratData.ed)
+table(seuratData.ed$cell_status)# Identify damaged cells
+seuratData.ed.dc <- identify_damaged_cells(seuratData.ed, verbose = FALSE, output_plots = TRUE)
+head(seuratData.ed.dc[[1]])
+table(seuratData.ed.dc[[1]]$cell_status)
+wrap_plots(seuratData.ed.dc[[2]], nrow = length(levels(seuratData@active.ident)))
+
+seuratData$cell_status <- seuratData.ed.dc[[1]][3]
+DimPlot(seuratData, reduction = "umap", label = TRUE)
+DimPlot(seuratData, reduction = "umap", label = TRUE, pt.size = 0.5, group.by = "cell_status")
+saveRDS(seuratData, paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+
+
+# Integrated data
+vg0402<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+vg0410<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+vg0618<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+vg0909<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+
+vg0402$batch<-"vg0402"
+vg0410$batch<-"vg0410"
+vg0618$batch<-"vg0618"
+vg0909$batch<-"fvg0909"
+
+VG.list = c(vg0402,vg0410,vg0618,vg0909)
+
+.vars.to.regress =c("percent.mt")
+# normalize and identify variable features for each dataset independently
+VG.list <- lapply(X = VG.list, FUN = function(x) {
+  x <- SCTransform(x, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
+  })
+
+features <- SelectIntegrationFeatures(object.list = VG.list, nfeatures = 3000)
+VG.list <- PrepSCTIntegration(object.list = VG.list, anchor.features = features)
+
+VG.anchors <- FindIntegrationAnchors(object.list = VG.list, normalization.method = "SCT", anchor.features = features)
+VG.combined <- IntegrateData(anchorset = VG.anchors, normalization.method = "SCT")
+DefaultAssay(VG.combined) <- "integrated"
+VG.combined <- FindNeighbors(VG.combined, dims = 1:50)
+VG.combined <- FindClusters(VG.combined, resolution = 3, verbose = FALSE)
+
+metadata <- VG.combined@meta.data
+cluster_summary <- metadata %>%
+  group_by(seurat_clusters, scDblFinder.class) %>%
+  summarise(count = n(), .groups = 'drop')
+cluster_summary <- cluster_summary %>%
+  group_by(seurat_clusters) %>%
+  mutate(proportion = count / sum(count))  
+
+result <- cluster_summary %>%
+  filter(scDblFinder.class == "doublet" & proportion > 0.5) %>%
+  select(seurat_clusters)
+result = as.numeric(as.character(result$seurat_clusters))
+
+metadata <- VG.combined@meta.data
+cluster_summary <- metadata %>%
+  group_by(seurat_clusters, cell_status) %>%
+  summarise(count = n(), .groups = 'drop')
+cluster_summary <- cluster_summary %>%
+  group_by(seurat_clusters) %>%
+  mutate(proportion = count / sum(count)) 
+result2 <- cluster_summary %>%
+  filter(cell_status == "damaged_cell" & proportion > 0.5) %>%
+  select(seurat_clusters)
+result2 = as.numeric(as.character(result2$seurat_clusters))
+
+combined_result = union(result, result2)
+
+Idents(VG.combined) = VG.combined$integrated_snn_res.3
+VG.combined = subset(VG.combined, idents = c(combined_result), invert = TRUE)
+VG.combined = subset(VG.combined, subset = scDblFinder.class == "singlet")
+VG.combined = subset(VG.combined, subset = nFeature_RNA > 200)
+
+VG.combined <- RunPCA(VG.combined, verbose = FALSE)
+VG.combined <- RunUMAP(VG.combined, reduction = "pca", dims = 1:50, verbose = FALSE)
+DimPlot(VG.combined, reduction = "umap", group.by = "batch")
+
+Annotation <- function(label, gene_list){
+  anno.scaled = ScaleData(VG.combined, features = gene_list, vars.to.regress = c("percent.mt"), verbose = FALSE)
+  # raw counts
+  p = VlnPlot(anno.scaled, features = gene_list, layer = "counts", pt.size = 0, stack = T, flip = T)
+  # log Normalized Count
+  p = VlnPlot(VG.combined, features = gene_list, layer = "data", pt.size = 0, stack = T, flip = T)
+  # feature plot
+  p = FeaturePlot(anno.scaled, features = gene_list)
+  # heatmap
+  p = DoHeatmap(anno.scaled, features = gene_list, size = 2) + NoLegend()
+  rm(anno.scaled)
+}
+
+Annotation("neuronal", c("Stmn2", "Tubb3", "Syt1", "Mapt", "Syp", "Pcdh9"))
+Annotation("rbc", c("Hba-a1", "Hba-a2", "Hbb-bs", "Hbb-bt"))
+Annotation("satelite_glia", c("Plp1", "Fabp7","Igfbp6"))
+Annotation("oligo", c("Olig1", "Olig2", "Mag", "Mog"))
+Annotation("schwann", c("Plp1", "Ncmap"))
+Annotation("fibroblast", c("Fn1", "Dcn", "Lum"))
+Annotation("SMCs", c("Acta2", "Tagln", "Tpm1"))
+Annotation("endothelial", c("Cldn5", "Ly6c1", "Flt1"))
+Annotation("macrophages", c("C1qb", "Ctss"))
+Annotation("epithelial", c("Kl", "Krt18"))
+Annotation("mural_cells", c("Rgs5", "Vtn"))
+Annotation("T_cells", c("Trbc1", "Xcl1"))
+
+new.cluster.ids <- c("neuron", "schwann", "endothelial cells", "schwann", "satelite glia",
+                     "fibroblast", "neuron", "neuron", "macrophages", "satelite glia",
+                     "neuron", "SMCs", "endothelial cells", "Oligo", "fibroblast", "satelite glia")
+
+names(new.cluster.ids) <- levels(VG.combined)
+VG.combined <- RenameIdents(VG.combined, new.cluster.ids)
+VG.combined$final_cluster = Idents(VG.combined)
+
+DimPlot(VG.combined, reduction = "umap", label = TRUE)
+
+saveRDS(VG.combined, paste0("/path_to_your_result/", "clustered.rds"))
