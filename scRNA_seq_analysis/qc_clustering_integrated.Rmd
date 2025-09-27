@@ -10,7 +10,7 @@ library(utils)
 library(stats)
 library(DropletQC)
 
-set.seed(42)
+
 sample_name = "your_sample_name"
 wd = paste0("/path/to/your/cellbender_data/", sample_name, "/")
 file_name = paste0(sample_name, "_cellbender_output_file_filtered.h5")
@@ -191,9 +191,7 @@ Annotation("epithelial", c("Kl", "Krt18"))
 Annotation("mural_cells", c("Rgs5", "Vtn"))
 Annotation("T_cells", c("Trbc1", "Xcl1"))
 
-new.cluster.ids <- c("neuron", "schwann", "endothelial cells", "schwann", "satelite glia",
-                     "fibroblast", "neuron", "neuron", "macrophages", "satelite glia",
-                     "neuron", "SMCs", "endothelial cells", "Oligo", "fibroblast", "satelite glia")
+new.cluster.ids <- c("schwann","endothelial cells","neuron","satelite glia","fibroblast","neuron","neuron","macrophages","satelite glia","neuron","neuron","SMCs","oligo","fibroblast")
 
 names(new.cluster.ids) <- levels(VG.combined)
 VG.combined <- RenameIdents(VG.combined, new.cluster.ids)
