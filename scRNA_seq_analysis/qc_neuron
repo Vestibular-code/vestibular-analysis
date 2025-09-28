@@ -61,11 +61,5 @@ vgn.markers %>%
     group_by(cluster) %>%
     slice_max(n = 20, order_by = avg_log2FC)
 
-VlnPlot(vgn, features = c("Calb1", "Slc17a7", "Lypd1", "Fxyd7", "Pcdh17", "F2r", "Vat1l"),slot = "counts",assay = "RNA", stack = T, flip = T)
-
-new.cluster.ids <- c("Lypd1+","F2r+","Fxyd7+","Calb1+","Pcdh17+")
-names(new.cluster.ids) <- levels(vgn)
-vgn <- RenameIdents(vgn, new.cluster.ids)
-DimPlot(vgn, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
 
 saveRDS(vgn,file=paste0("/path_to_your_result/", "clustered_neuron.rds"))
