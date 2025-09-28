@@ -1,1 +1,71 @@
-li
+# Import Packages 
+library(dplyr)
+library(Seurat)
+library(qs)
+library(sctransform)
+library(utils)
+library(stats)
+
+VG.combined<-readRDS(paste0("/path_to_your_result/", "clustered.rds"))
+vgn<-subset(VG.combined,idents="neuron")
+vgn = subset(vgn, subset = nFeature_RNA > 200 & nCount_RNA > 3000 & percent.mt < 5)
+
+# Regress
+DefaultAssay(vgn) <- "RNA"
+vgn.list <- SplitObject(vgn, split.by = "batch")
+sex.gene = c("Xist", "Ddx3x", "Uty") #"Eif2x3y")
+mix.gene = c("Mpz", "Mbp", "Mt1", "Mt2","Pmp22","Igfbp6","Apoe","Dcn","Chgb","Actb","S100a6")
+vgn[["percent.mix"]] <- PercentageFeatureSet(object = vgn, features = mix.gene, assay = 'RNA')
+vgn[["percent.sex"]] <- PercentageFeatureSet(object = vgn, features = sex.gene, assay = 'RNA')
+mt.gene <- rownames(vgn)[grep("^mt-", rownames(vgn))]
+vgn[["percent.mt"]] <- PercentageFeatureSet(object = vgn, features = mt.gene, assay = 'RNA')
+rbc.gene <- rownames(vgn)[grep("^Hb[ab]-", rownames(vgn))]
+vgn[["percent.rbc"]] <- PercentageFeatureSet(object = vgn, features = rbc.gene, assay = 'RNA')
+.vars.to.regress = c("percent.mt","percent.rbc","percent.mix")
+vgn.list <- lapply(X = vgn.list, FUN = function(x) {
+  x <- SCTransform(x, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
+  })
+# vgn.list<- SCTransform(vgn.list, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
+
+#? SCTransform(vgn, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
+features <- SelectIntegrationFeatures(object.list = vgn.list, nfeatures = 3000)
+VariableGenes <- setdiff(setdiff(
+  head(features, 3000),
+  mt.gene), sex.gene)
+vgn.list <- PrepSCTIntegration(object.list = vgn.list, anchor.features = VariableGenes)
+
+vgn.anchors <- FindIntegrationAnchors(object.list = vgn.list, normalization.method = "SCT", anchor.features = VariableGenes)
+vgn<- IntegrateData(anchorset = vgn.anchors, normalization.method = "SCT")
+vgn<- RunPCA(vgn, verbose = FALSE)
+
+mt.gene <- rownames(vgn)[grep("^mt-", rownames(vgn))]
+VariableGenes <- setdiff(setdiff(
+  head(VariableFeatures(vgn), 3000),
+  mt.gene), sex.gene)
+
+DefaultAssay(vgn) <- "integrated"
+vgn
+vgn<- RunPCA(vgn, features = VariableGenes,npcs=50)
+print(vgn[["pca"]], dims = 1:50, nfeatures = 10)
+
+ndims = 33
+vgn<- FindNeighbors(vgn, dims = 1:ndims,k.param = 30,do.plot = F)
+vgn<- FindClusters(vgn, resolution = 0.15)
+vgn<- RunUMAP(vgn, dims = 1:ndims, min.dist = 0.2,n.neighbors =40)
+
+DefaultAssay(vgn) <- "SCT"
+
+.test.use = "wilcox"
+vgn.markers <- FindAllMarkers(vgn, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, test.use = .test.use, return.thresh = 0.01)
+vgn.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 20, order_by = avg_log2FC)
+
+VlnPlot(vgn, features = c("Calb1", "Slc17a7", "Lypd1", "Fxyd7", "Pcdh17", "F2r", "Vat1l"),slot = "counts",assay = "RNA", stack = T, flip = T)
+
+new.cluster.ids <- c("Lypd1+","F2r+","Fxyd7+","Calb1+","Pcdh17+")
+names(new.cluster.ids) <- levels(vgn)
+vgn <- RenameIdents(vgn, new.cluster.ids)
+DimPlot(vgn, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+
+saveRDS(vgn,file=paste0("/path_to_your_result/", "clustered_neuron.rds"))
