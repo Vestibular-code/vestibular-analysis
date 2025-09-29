@@ -102,17 +102,17 @@ saveRDS(seuratData, paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
 
 
 # Integrated data
-vg0402<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
-vg0410<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
-vg0618<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
-vg0909<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+v0402<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+v0402<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+v0618<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
+v0909<-readRDS(paste0("/path_to_your_result/", "final_qc_annnotated.rds"))
 
-vg0402$batch<-"vg0402"
-vg0410$batch<-"vg0410"
-vg0618$batch<-"vg0618"
-vg0909$batch<-"fvg0909"
+v0402$batch<-"v0402"
+v0402$batch<-"v0402"
+v0618$batch<-"v0618"
+v0909$batch<-"fv0909"
 
-VG.list = c(vg0402,vg0410,vg0618,vg0909)
+VG.list = c(v0402,v0402,v0618,v0909)
 
 .vars.to.regress =c("percent.mt")
 # normalize and identify variable features for each dataset independently
@@ -124,12 +124,12 @@ features <- SelectIntegrationFeatures(object.list = VG.list, nfeatures = 3000)
 VG.list <- PrepSCTIntegration(object.list = VG.list, anchor.features = features)
 
 VG.anchors <- FindIntegrationAnchors(object.list = VG.list, normalization.method = "SCT", anchor.features = features)
-VG.combined <- IntegrateData(anchorset = VG.anchors, normalization.method = "SCT")
-DefaultAssay(VG.combined) <- "integrated"
-VG.combined <- FindNeighbors(VG.combined, dims = 1:50)
-VG.combined <- FindClusters(VG.combined, resolution = 3, verbose = FALSE)
+combined <- IntegrateData(anchorset = VG.anchors, normalization.method = "SCT")
+DefaultAssay(combined) <- "integrated"
+combined <- FindNeighbors(combined, dims = 1:50)
+combined <- FindClusters(combined, resolution = 3, verbose = FALSE)
 
-metadata <- VG.combined@meta.data
+metadata <- combined@meta.data
 cluster_summary <- metadata %>%
   group_by(seurat_clusters, scDblFinder.class) %>%
   summarise(count = n(), .groups = 'drop')
@@ -142,7 +142,7 @@ result <- cluster_summary %>%
   select(seurat_clusters)
 result = as.numeric(as.character(result$seurat_clusters))
 
-metadata <- VG.combined@meta.data
+metadata <- combined@meta.data
 cluster_summary <- metadata %>%
   group_by(seurat_clusters, cell_status) %>%
   summarise(count = n(), .groups = 'drop')
@@ -156,21 +156,21 @@ result2 = as.numeric(as.character(result2$seurat_clusters))
 
 combined_result = union(result, result2)
 
-Idents(VG.combined) = VG.combined$integrated_snn_res.3
-VG.combined = subset(VG.combined, idents = c(combined_result), invert = TRUE)
-VG.combined = subset(VG.combined, subset = scDblFinder.class == "singlet")
-VG.combined = subset(VG.combined, subset = nFeature_RNA > 200)
+Idents(combined) = combined$integrated_snn_res.3
+combined = subset(combined, idents = c(combined_result), invert = TRUE)
+combined = subset(combined, subset = scDblFinder.class == "singlet")
+combined = subset(combined, subset = nFeature_RNA > 200)
 
-VG.combined <- RunPCA(VG.combined, verbose = FALSE)
-VG.combined <- RunUMAP(VG.combined, reduction = "pca", dims = 1:50, verbose = FALSE)
-DimPlot(VG.combined, reduction = "umap")
+combined <- RunPCA(combined, verbose = FALSE)
+combined <- RunUMAP(combined, reduction = "pca", dims = 1:50, verbose = FALSE)
+DimPlot(combined, reduction = "umap")
 
 Annotation <- function(label, gene_list){
-  anno.scaled = ScaleData(VG.combined, features = gene_list, vars.to.regress = c("percent.mt"), verbose = FALSE)
+  anno.scaled = ScaleData(combined, features = gene_list, vars.to.regress = c("percent.mt"), verbose = FALSE)
   # raw counts
   p = VlnPlot(anno.scaled, features = gene_list, layer = "counts", pt.size = 0, stack = T, flip = T)
   # log Normalized Count
-  p = VlnPlot(VG.combined, features = gene_list, layer = "data", pt.size = 0, stack = T, flip = T)
+  p = VlnPlot(combined, features = gene_list, layer = "data", pt.size = 0, stack = T, flip = T)
   # feature plot
   p = FeaturePlot(anno.scaled, features = gene_list)
   # heatmap
@@ -193,10 +193,10 @@ Annotation("T_cells", c("Trbc1", "Xcl1"))
 
 new.cluster.ids <- c("schwann","endothelial cells","neuron","satelite glia","fibroblast","neuron","neuron","macrophages","satelite glia","neuron","neuron","SMCs","oligo","fibroblast")
 
-names(new.cluster.ids) <- levels(VG.combined)
-VG.combined <- RenameIdents(VG.combined, new.cluster.ids)
-VG.combined$final_cluster = Idents(VG.combined)
+names(new.cluster.ids) <- levels(combined)
+combined <- RenameIdents(combined, new.cluster.ids)
+combined$final_cluster = Idents(combined)
 
-DimPlot(VG.combined, reduction = "umap", label = TRUE)
+DimPlot(combined, reduction = "umap", label = TRUE)
 
-saveRDS(VG.combined, paste0("/path_to_your_result/", "clustered.rds"))
+saveRDS(combined, paste0("/path_to_your_result/", "clustered.rds"))
