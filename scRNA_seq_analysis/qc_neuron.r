@@ -1,4 +1,3 @@
-# Import Packages 
 library(dplyr)
 library(Seurat)
 library(qs)
@@ -6,60 +5,60 @@ library(sctransform)
 library(utils)
 library(stats)
 
-VG.combined<-readRDS(paste0("/path_to_your_result/", "clustered.rds"))
-vgn<-subset(VG.combined,idents="neuron")
-vgn = subset(vgn, subset = nFeature_RNA > 200 & nCount_RNA > 3000 & percent.mt < 5)
+combined<-readRDS(paste0("/path_to_your_result/", "clustered.rds"))
+object<-subset(combined,idents="neuron")
+object = subset(object, subset = nFeature_RNA > 200 & nCount_RNA > 3000 & percent.mt < 5)
 
 # Regress
-DefaultAssay(vgn) <- "RNA"
-vgn.list <- SplitObject(vgn, split.by = "batch")
+DefaultAssay(object) <- "RNA"
+object.list <- SplitObject(object, split.by = "batch")
 sex.gene = c("Xist", "Ddx3x", "Uty") #"Eif2x3y")
 mix.gene = c("Mpz", "Mbp", "Mt1", "Mt2","Pmp22","Igfbp6","Apoe","Dcn","Chgb","Actb","S100a6")
-vgn[["percent.mix"]] <- PercentageFeatureSet(object = vgn, features = mix.gene, assay = 'RNA')
-vgn[["percent.sex"]] <- PercentageFeatureSet(object = vgn, features = sex.gene, assay = 'RNA')
-mt.gene <- rownames(vgn)[grep("^mt-", rownames(vgn))]
-vgn[["percent.mt"]] <- PercentageFeatureSet(object = vgn, features = mt.gene, assay = 'RNA')
-rbc.gene <- rownames(vgn)[grep("^Hb[ab]-", rownames(vgn))]
-vgn[["percent.rbc"]] <- PercentageFeatureSet(object = vgn, features = rbc.gene, assay = 'RNA')
+object[["percent.mix"]] <- PercentageFeatureSet(object = object, features = mix.gene, assay = 'RNA')
+object[["percent.sex"]] <- PercentageFeatureSet(object = object, features = sex.gene, assay = 'RNA')
+mt.gene <- rownames(object)[grep("^mt-", rownames(object))]
+object[["percent.mt"]] <- PercentageFeatureSet(object = object, features = mt.gene, assay = 'RNA')
+rbc.gene <- rownames(object)[grep("^Hb[ab]-", rownames(object))]
+object[["percent.rbc"]] <- PercentageFeatureSet(object = object, features = rbc.gene, assay = 'RNA')
 .vars.to.regress = c("percent.mt","percent.rbc","percent.mix")
-vgn.list <- lapply(X = vgn.list, FUN = function(x) {
+object.list <- lapply(X = object.list, FUN = function(x) {
   x <- SCTransform(x, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
   })
-# vgn.list<- SCTransform(vgn.list, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
+# object.list<- SCTransform(object.list, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
 
-#? SCTransform(vgn, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
-features <- SelectIntegrationFeatures(object.list = vgn.list, nfeatures = 3000)
+#? SCTransform(object, method = "glmGamPoi", vars.to.regress = .vars.to.regress, verbose = FALSE)
+features <- SelectIntegrationFeatures(object.list = object.list, nfeatures = 3000)
 VariableGenes <- setdiff(setdiff(
   head(features, 3000),
   mt.gene), sex.gene)
-vgn.list <- PrepSCTIntegration(object.list = vgn.list, anchor.features = VariableGenes)
+object.list <- PrepSCTIntegration(object.list = object.list, anchor.features = VariableGenes)
 
-vgn.anchors <- FindIntegrationAnchors(object.list = vgn.list, normalization.method = "SCT", anchor.features = VariableGenes)
-vgn<- IntegrateData(anchorset = vgn.anchors, normalization.method = "SCT")
-vgn<- RunPCA(vgn, verbose = FALSE)
+object.anchors <- FindIntegrationAnchors(object.list = object.list, normalization.method = "SCT", anchor.features = VariableGenes)
+object<- IntegrateData(anchorset = object.anchors, normalization.method = "SCT")
+object<- RunPCA(object, verbose = FALSE)
 
-mt.gene <- rownames(vgn)[grep("^mt-", rownames(vgn))]
+mt.gene <- rownames(object)[grep("^mt-", rownames(object))]
 VariableGenes <- setdiff(setdiff(
-  head(VariableFeatures(vgn), 3000),
+  head(VariableFeatures(object), 3000),
   mt.gene), sex.gene)
 
-DefaultAssay(vgn) <- "integrated"
-vgn
-vgn<- RunPCA(vgn, features = VariableGenes,npcs=50)
-print(vgn[["pca"]], dims = 1:50, nfeatures = 10)
+DefaultAssay(object) <- "integrated"
+object
+object<- RunPCA(object, features = VariableGenes,npcs=50)
+print(object[["pca"]], dims = 1:50, nfeatures = 10)
 
 ndims = 33
-vgn<- FindNeighbors(vgn, dims = 1:ndims,k.param = 30,do.plot = F)
-vgn<- FindClusters(vgn, resolution = 0.15)
-vgn<- RunUMAP(vgn, dims = 1:ndims, min.dist = 0.2,n.neighbors =40)
+object<- FindNeighbors(object, dims = 1:ndims,k.param = 30,do.plot = F)
+object<- FindClusters(object, resolution = 0.15)
+object<- RunUMAP(object, dims = 1:ndims, min.dist = 0.2,n.neighbors =40)
 
-DefaultAssay(vgn) <- "SCT"
+DefaultAssay(object) <- "SCT"
 
 .test.use = "wilcox"
-vgn.markers <- FindAllMarkers(vgn, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, test.use = .test.use, return.thresh = 0.01)
-vgn.markers %>%
+object.markers <- FindAllMarkers(object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, test.use = .test.use, return.thresh = 0.01)
+object.markers %>%
     group_by(cluster) %>%
     slice_max(n = 20, order_by = avg_log2FC)
 
 
-saveRDS(vgn,file=paste0("/path_to_your_result/", "clustered_neuron.rds"))
+saveRDS(object,file=paste0("/path_to_your_result/", "clustered_neuron.rds"))
