@@ -6,13 +6,8 @@ from scipy.interpolate import CubicSpline
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
-import argparse
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.model_selection import StratifiedShuffleSplit
 from matplotlib.ticker import MaxNLocator
 from matplotlib.colors import LinearSegmentedColormap, hex2color
-from scipy.interpolate import make_smoothing_spline
-from scipy.interpolate import UnivariateSpline
 
 plt.rcParams["font.family"] = ["Microsoft YaHei", "Arial"]
 
@@ -484,3 +479,4 @@ def plot_corrected_p_heatmap(
     fig2.savefig(p_output_path, dpi=1200, bbox_inches='tight')
     plt.close(fig2)
     print(f"p-value heatmap saved to: {p_output_path}")
+
